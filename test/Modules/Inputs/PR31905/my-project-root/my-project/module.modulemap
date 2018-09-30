@@ -1,3 +1,4 @@
 module my_project {
   header "my-header.h"
+  export *
 }
