@@ -1,4 +1,4 @@
 
-module system_module  {
+module system_module {
   header "sys-header-impl.h"
 }
