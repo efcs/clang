@@ -1506,16 +1506,23 @@ namespace {
       // A function template declaration is never a usual deallocation function.
       if (!FD)
         return;
-      unsigned NumBaseParams = 1;
+      unsigned UsualParams = 1;
       if (FD->isDestroyingOperatorDelete()) {
         Destroying = true;
-        ++NumBaseParams;
+        ++UsualParams;
       }
-      if (FD->getNumParams() == NumBaseParams + 2)
-        HasAlignValT = HasSizeT = true;
-      else if (FD->getNumParams() == NumBaseParams + 1) {
-        HasSizeT = FD->getParamDecl(NumBaseParams)->getType()->isIntegerType();
-        HasAlignValT = !HasSizeT;
+      if (FD->getNumParams() > UsualParams &&
+          S.Context.hasSameUnqualifiedType(
+              FD->getParamDecl(UsualParams)->getType(),
+              S.Context.getSizeType())) {
+        HasSizeT = true;
+        ++UsualParams;
+      }
+
+      if (FD->getNumParams() > UsualParams &&
+          FD->getParamDecl(UsualParams)->getType()->isAlignValT()) {
+        HasAlignValT = true;
+        ++UsualParams;
       }
 
       // In CUDA, determine how much we'd like / dislike to call this.
