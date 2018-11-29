@@ -3,6 +3,7 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -std=c11 -fmodules -fmodules-cache-path=%t %s -D__STDC_WANT_LIB_EXT1__=1
 // RUN: %clang_cc1 -fsyntax-only -verify -std=c11 -ffreestanding %s
 // RUN: %clang_cc1 -fsyntax-only -verify -std=c11 -triple i686-pc-win32 -fms-compatibility-version=17.00 %s
+// RUN: %clang_cc1 -fsyntax-only -verify -std=c11 -triple i386-unknown-linux-gnu %s
 
 noreturn int f(); // expected-error 1+{{}}
 
@@ -29,8 +30,17 @@ _Static_assert(alignof(max_align_t) >= alignof(long long), "");
 _Static_assert(sizeof(max_align_t) >= sizeof(long double), "");
 _Static_assert(alignof(max_align_t) >= alignof(long double), "");
 
+
 #ifdef _MSC_VER
 _Static_assert(sizeof(max_align_t) == sizeof(double), "");
+_Static_assert(alignof(max_align_t) == alignof(double), "");
+#elif defined(__APPLE__)
+_Static_assert(sizeof(max_align_t) == sizeof(long double), "");
+_Static_assert(alignof(max_align_t) == alignof(long double), "");
+#else
+// Test compatibility with GCC's version
+_Static_assert(sizeof(max_align_t) >= sizeof(__float128), "");
+_Static_assert(alignof(max_align_t) >= alignof(__float128), "");
 #endif
 
 // If we are freestanding, then also check RSIZE_MAX (in a hosted implementation
