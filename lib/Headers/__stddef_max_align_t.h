@@ -37,7 +37,7 @@ typedef struct {
       __attribute__((__aligned__(__alignof__(long long))));
   long double __clang_max_align_nonce2
       __attribute__((__aligned__(__alignof__(long double))));
-#ifdef __i386__
+#ifdef __SIZEOF_FLOAT128__
   __float128 __clang_max_align_nonce3
     __attribute__((__aligned__(__alignof__(__float128))));
 #endif

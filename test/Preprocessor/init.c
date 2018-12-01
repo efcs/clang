@@ -6408,6 +6408,7 @@
 //
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-none-none -target-feature +float128 -target-cpu power9 -fno-signed-char < /dev/null | FileCheck -check-prefix PPC-FLOAT128 %s
 // PPC-FLOAT128:#define __FLOAT128__ 1
+// PPC-FLOAT128:#define __SIZEOF_FLOAT128__ 16
 //
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-unknown-linux-gnu -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-LINUX %s
 //
@@ -8624,6 +8625,7 @@
 // X86_64-LINUX:#define __SIG_ATOMIC_MAX__ 2147483647
 // X86_64-LINUX:#define __SIG_ATOMIC_WIDTH__ 32
 // X86_64-LINUX:#define __SIZEOF_DOUBLE__ 8
+// X86_64-LINUX:#define __SIZEOF_FLOAT128__ 16
 // X86_64-LINUX:#define __SIZEOF_FLOAT__ 4
 // X86_64-LINUX:#define __SIZEOF_INT__ 4
 // X86_64-LINUX:#define __SIZEOF_LONG_DOUBLE__ 16
