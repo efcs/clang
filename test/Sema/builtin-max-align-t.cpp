@@ -4,7 +4,7 @@
 
 // expected-no-diagnostics
 
-typedef __builtin_max_align_t MAT;
+typedef max_align_t MAT;
 #if defined(_MSC_VER)
 _Static_assert(__is_same(MAT, double), "");
 #elif defined(__APPLE__)
