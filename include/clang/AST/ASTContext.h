@@ -1067,6 +1067,7 @@ public:
   // The decl is built when constructing 'BuiltinVaListDecl'.
   mutable Decl *VaListTagDecl;
 
+  // The Decl used to help define max_align_t for some targets.
   mutable RecordDecl *MaxAlignTTagDecl;
 
   ASTContext(LangOptions &LOpts, SourceManager &SM, IdentifierTable &idents,
