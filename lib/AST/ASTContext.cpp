@@ -7586,7 +7586,7 @@ static RecordDecl *CreateGNUMaxAlignTDecl(const ASTContext *Context) {
   if (TI.hasFloat128Type())
     Members.push_back({Context->Float128Ty, "mem3"});
 
-  RecordDecl *BuiltinMaxAlignDecl = Context->buildImplicitRecord("__builtin_max_align_impl");
+  RecordDecl *BuiltinMaxAlignDecl = Context->buildImplicitRecord("__builtin_max_align_t");
   BuiltinMaxAlignDecl->startDefinition();
   {
     for (auto &M : Members) {
