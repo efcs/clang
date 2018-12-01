@@ -311,6 +311,9 @@ private:
   /// The typedef for the predefined \c __builtin_ms_va_list type.
   mutable TypedefDecl *BuiltinMSVaListDecl = nullptr;
 
+  /// The typedef for the predefined __builtin_max_align_t type
+  mutable TypedefDecl *BuiltinMaxAlignTDecl = nullptr;
+
   /// The typedef for the predefined \c id type.
   mutable TypedefDecl *ObjCIdDecl = nullptr;
 
@@ -1916,6 +1919,12 @@ public:
   /// Retrieve the type of the \c __builtin_ms_va_list type.
   QualType getBuiltinMSVaListType() const {
     return getTypeDeclType(getBuiltinMSVaListDecl());
+  }
+
+  TypedefDecl *getBuiltinMaxAlignTDecl() const;
+
+  QualType getBuiltinMaxAlignTType() const {
+    return getTypeDeclType(getBuiltinMaxAlignTDecl());
   }
 
   /// Return whether a declaration to a builtin is allowed to be

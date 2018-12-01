@@ -7574,6 +7574,45 @@ bool ASTContext::canBuiltinBeRedeclared(const FunctionDecl *FD) const {
   return BuiltinInfo.canBeRedeclared(FD->getBuiltinID());
 }
 
+static TypedefDecl *CreateMSCMaxAlignTDecl(const ASTContext *Context) {
+  QualType T = Context->DoubleTy;
+  return Context->buildImplicitTypedef(T, "__builtin_max_align_t");
+}
+
+static TypedefDecl *CreateAppleMaxAlignTDecl(const ASTContext *Context) {
+  QualType T = Context->LongDoubleTy;
+  return Context->buildImplicitTypedef(T, "__builtin_max_align_t");
+}
+
+static TypedefDecl *CreateGNUMaxAlignTDecl(const ASTContext *Context) {
+  const TargetInfo &TI = Context->getTargetInfo();
+  std::vector<QualType> ToConsider = {Context->DoubleTy, Context->LongDoubleTy};
+  if (TI.hasFloat128Type())
+    ToConsider.push_back(Context->Float128Ty);
+  QualType BestTy = *std::max_element(ToConsider.begin(), ToConsider.end(), [=](QualType LHS, QualType RHS) {
+    unsigned LHSAlign = Context->getPreferredTypeAlign(LHS.getTypePtr());
+    unsigned RHSAlign = Context->getPreferredTypeAlign(RHS.getTypePtr());
+    return LHSAlign < RHSAlign;
+  });
+  return Context->buildImplicitTypedef(BestTy, "__builtin_max_align_t");
+}
+
+static TypedefDecl *CreateMaxAlignTDecl(const ASTContext *Context) {
+  const llvm::Triple &T = Context->getTargetInfo().getTriple();
+  if (T.isWindowsMSVCEnvironment())
+    return CreateMSCMaxAlignTDecl(Context);
+  else if (T.isOSDarwin())
+    return CreateAppleMaxAlignTDecl(Context);
+  else
+    return CreateGNUMaxAlignTDecl(Context);
+}
+
+TypedefDecl *ASTContext::getBuiltinMaxAlignTDecl() const {
+  if (!BuiltinMaxAlignTDecl)
+    BuiltinMaxAlignTDecl = CreateMaxAlignTDecl(this);
+  return BuiltinMaxAlignTDecl;
+}
+
 void ASTContext::setObjCConstantStringInterface(ObjCInterfaceDecl *Decl) {
   assert(ObjCConstantStringType.isNull() &&
          "'NSConstantString' type already set!");
