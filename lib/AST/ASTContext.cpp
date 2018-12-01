@@ -1330,6 +1330,8 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target,
 
   // Builtin type used to help define __builtin_va_list.
   VaListTagDecl = nullptr;
+
+  MaxAlignTTagDecl = nullptr;
 }
 
 DiagnosticsEngine &ASTContext::getDiagnostics() const {
@@ -7574,37 +7576,51 @@ bool ASTContext::canBuiltinBeRedeclared(const FunctionDecl *FD) const {
   return BuiltinInfo.canBeRedeclared(FD->getBuiltinID());
 }
 
-static TypedefDecl *CreateMSCMaxAlignTDecl(const ASTContext *Context) {
-  QualType T = Context->DoubleTy;
-  return Context->buildImplicitTypedef(T, "__builtin_max_align_t");
-}
-
-static TypedefDecl *CreateAppleMaxAlignTDecl(const ASTContext *Context) {
-  QualType T = Context->LongDoubleTy;
-  return Context->buildImplicitTypedef(T, "__builtin_max_align_t");
-}
-
-static TypedefDecl *CreateGNUMaxAlignTDecl(const ASTContext *Context) {
+static RecordDecl *CreateGNUMaxAlignTDecl(const ASTContext *Context) {
   const TargetInfo &TI = Context->getTargetInfo();
-  std::vector<QualType> ToConsider = {Context->DoubleTy, Context->LongDoubleTy};
+  struct MemberInfo {
+    QualType Ty;
+    const char *Name;
+  };
+  std::vector<MemberInfo> Members = {{Context->LongLongTy, "mem1"}, {Context->LongDoubleTy, "mem2"}};
   if (TI.hasFloat128Type())
-    ToConsider.push_back(Context->Float128Ty);
-  QualType BestTy = *std::max_element(ToConsider.begin(), ToConsider.end(), [=](QualType LHS, QualType RHS) {
-    unsigned LHSAlign = Context->getPreferredTypeAlign(LHS.getTypePtr());
-    unsigned RHSAlign = Context->getPreferredTypeAlign(RHS.getTypePtr());
-    return LHSAlign < RHSAlign;
-  });
-  return Context->buildImplicitTypedef(BestTy, "__builtin_max_align_t");
+    Members.push_back({Context->Float128Ty, "mem3"});
+
+  RecordDecl *BuiltinMaxAlignDecl = Context->buildImplicitRecord("__builtin_max_align_impl");
+  BuiltinMaxAlignDecl->startDefinition();
+  {
+    for (auto &M : Members) {
+      FieldDecl *Field = FieldDecl::Create(const_cast<ASTContext &>(*Context),
+                                           BuiltinMaxAlignDecl,
+                                           SourceLocation(),
+                                           SourceLocation(),
+                                           &Context->Idents.get(M.Name),
+                                           M.Ty, /*TInfo=*/nullptr,
+          /*BitWidth=*/nullptr,
+          /*Mutable=*/false,
+                                           ICIS_NoInit);
+      Field->setAccess(AS_public);
+      BuiltinMaxAlignDecl->addDecl(Field);
+    }
+  }
+  BuiltinMaxAlignDecl->completeDefinition();
+  return BuiltinMaxAlignDecl;
 }
 
 static TypedefDecl *CreateMaxAlignTDecl(const ASTContext *Context) {
   const llvm::Triple &T = Context->getTargetInfo().getTriple();
-  if (T.isWindowsMSVCEnvironment())
-    return CreateMSCMaxAlignTDecl(Context);
-  else if (T.isOSDarwin())
-    return CreateAppleMaxAlignTDecl(Context);
-  else
-    return CreateGNUMaxAlignTDecl(Context);
+  QualType Ty = [&]() -> QualType {
+    if (T.isWindowsMSVCEnvironment())
+      return Context->DoubleTy;
+    else if (T.isOSDarwin())
+      return Context->LongDoubleTy;
+    else {
+      if (!Context->MaxAlignTTagDecl)
+        Context->MaxAlignTTagDecl = CreateGNUMaxAlignTDecl(Context);
+      return Context->getRecordType(Context->MaxAlignTTagDecl);
+    }
+  }();
+  return Context->buildImplicitTypedef(Ty, "__builtin_max_align_t");
 }
 
 TypedefDecl *ASTContext::getBuiltinMaxAlignTDecl() const {

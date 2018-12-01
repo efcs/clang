@@ -1067,6 +1067,8 @@ public:
   // The decl is built when constructing 'BuiltinVaListDecl'.
   mutable Decl *VaListTagDecl;
 
+  mutable RecordDecl *MaxAlignTTagDecl;
+
   ASTContext(LangOptions &LOpts, SourceManager &SM, IdentifierTable &idents,
              SelectorTable &sels, Builtin::Context &builtins);
   ASTContext(const ASTContext &) = delete;

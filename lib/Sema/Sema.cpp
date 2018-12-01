@@ -335,6 +335,10 @@ void Sema::Initialize() {
   DeclarationName BuiltinVaList = &Context.Idents.get("__builtin_va_list");
   if (IdResolver.begin(BuiltinVaList) == IdResolver.end())
     PushOnScopeChains(Context.getBuiltinVaListDecl(), TUScope);
+
+  DeclarationName BuiltinMaxAlignT = &Context.Idents.get("__builtin_max_align_t");
+  if (IdResolver.begin(BuiltinMaxAlignT) == IdResolver.end())
+    PushOnScopeChains(Context.getBuiltinMaxAlignTDecl(), TUScope);
 }
 
 Sema::~Sema() {
