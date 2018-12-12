@@ -1273,7 +1273,9 @@ extern const internal::VariadicDynCastAllOfMatcher<Stmt, CallExpr> callExpr;
 ///     y(x); // Matches
 ///     NS::y(x); // Doesn't match
 ///     y(42); // Doesn't match
-///   }
+///     using NS::y;
+///     y(x); // Found by both unqualified lookup and ADL, doesn't match
+//    }
 /// \endcode
 AST_MATCHER(CallExpr, usesADL) { return Node.usesADL(); }
 
