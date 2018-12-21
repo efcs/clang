@@ -25,15 +25,6 @@ typedef struct {
 #endif
 } gnu_max_align_t;
 
-template <class T>
-struct Printer;
-template <unsigned, unsigned> struct SPrinter;
-SPrinter<sizeof(max_align_t), alignof(max_align_t)> p1;
-
-SPrinter<sizeof(gnu_max_align_t), alignof(gnu_max_align_t)> p2;
-
-Printer<__builtin_max_align_t> p;
-
 _Static_assert(sizeof(max_align_t) == sizeof(gnu_max_align_t), "");
 _Static_assert(_Alignof(max_align_t) == _Alignof(gnu_max_align_t), "");
 _Static_assert(__alignof(max_align_t) == __alignof(gnu_max_align_t), "");

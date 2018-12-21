@@ -7600,12 +7600,18 @@ static RecordDecl *CreateGNUMaxAlignTDecl(const ASTContext *Context) {
                                            /*Mutable=*/false,
                                            ICIS_NoInit);
       Field->setAccess(AS_public);
-      unsigned Align = Context->getTypeAlign(M.Ty);
-      llvm::errs() << "Adding Align = " << Align << "\n";
-      llvm::APInt AlignVal = Context->MakeIntValue(Align, Context->IntTy);
-      Expr *LiteralAlign = IntegerLiteral::Create(*Context, AlignVal, Context->IntTy, SourceLocation());
-      auto *AA = ::new (*Context) AlignedAttr(SourceRange(), const_cast<ASTContext&>(*Context), true, LiteralAlign, AlignedAttr::GNU_aligned);
+
+      // Align the field as if by `__attribute__((__aligned__(__alignof__(T))))`
+      unsigned Align = Context->getPreferredTypeAlign(M.Ty.getTypePtr()) /
+                       Context->getCharWidth();
+      Expr *LiteralAlign = IntegerLiteral::Create(
+          *Context, Context->MakeIntValue(Align, Context->IntTy),
+          Context->IntTy, SourceLocation());
+      auto *AA = AlignedAttr::CreateImplicit(
+          const_cast<ASTContext &>(*Context), AlignedAttr::GNU_aligned,
+          /*IsAlignmentExpr=*/true, LiteralAlign, SourceLocation());
       Field->addAttr(AA);
+
       BuiltinMaxAlignDecl->addDecl(Field);
     }
   }
