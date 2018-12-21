@@ -7586,7 +7586,7 @@ static RecordDecl *CreateGNUMaxAlignTDecl(const ASTContext *Context) {
   if (TI.hasFloat128Type())
     Members.push_back({Context->Float128Ty, "mem3"});
 
-  RecordDecl *BuiltinMaxAlignDecl = Context->buildImplicitRecord("__builtin_max_align_t");
+  RecordDecl *BuiltinMaxAlignDecl = Context->buildImplicitRecord("__max_align_t");
   BuiltinMaxAlignDecl->startDefinition();
   {
     for (auto &M : Members) {
@@ -7596,10 +7596,16 @@ static RecordDecl *CreateGNUMaxAlignTDecl(const ASTContext *Context) {
                                            SourceLocation(),
                                            &Context->Idents.get(M.Name),
                                            M.Ty, /*TInfo=*/nullptr,
-          /*BitWidth=*/nullptr,
-          /*Mutable=*/false,
+                                           /*BitWidth=*/nullptr,
+                                           /*Mutable=*/false,
                                            ICIS_NoInit);
       Field->setAccess(AS_public);
+      unsigned Align = Context->getTypeAlign(M.Ty);
+      llvm::errs() << "Adding Align = " << Align << "\n";
+      llvm::APInt AlignVal = Context->MakeIntValue(Align, Context->IntTy);
+      Expr *LiteralAlign = IntegerLiteral::Create(*Context, AlignVal, Context->IntTy, SourceLocation());
+      auto *AA = ::new (*Context) AlignedAttr(SourceRange(), const_cast<ASTContext&>(*Context), true, LiteralAlign, AlignedAttr::GNU_aligned);
+      Field->addAttr(AA);
       BuiltinMaxAlignDecl->addDecl(Field);
     }
   }
@@ -7620,7 +7626,7 @@ static TypedefDecl *CreateMaxAlignTDecl(const ASTContext *Context) {
       return Context->getRecordType(Context->MaxAlignTTagDecl);
     }
   }();
-  return Context->buildImplicitTypedef(Ty, "__max_align_t");
+  return Context->buildImplicitTypedef(Ty, "__builtin_max_align_t");
 }
 
 TypedefDecl *ASTContext::getBuiltinMaxAlignTDecl() const {

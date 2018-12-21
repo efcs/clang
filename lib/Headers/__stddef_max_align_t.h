@@ -26,6 +26,6 @@
 #ifndef __CLANG_MAX_ALIGN_T_DEFINED
 #define __CLANG_MAX_ALIGN_T_DEFINED
 
-typedef __max_align_t max_align_t;
+typedef __builtin_max_align_t max_align_t;
 
 #endif
