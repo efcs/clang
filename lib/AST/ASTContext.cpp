@@ -7620,7 +7620,7 @@ static TypedefDecl *CreateMaxAlignTDecl(const ASTContext *Context) {
       return Context->getRecordType(Context->MaxAlignTTagDecl);
     }
   }();
-  return Context->buildImplicitTypedef(Ty, "max_align_t");
+  return Context->buildImplicitTypedef(Ty, "__max_align_t");
 }
 
 TypedefDecl *ASTContext::getBuiltinMaxAlignTDecl() const {
