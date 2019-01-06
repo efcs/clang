@@ -12,7 +12,6 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "clang/Sema/SemaInternal.h"
 #include "TreeTransform.h"
 #include "TypeLocBuilder.h"
 #include "clang/AST/ASTContext.h"
@@ -24,6 +23,7 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/TypeLoc.h"
+#include "clang/AST/UsualDeallocationInfo.h"
 #include "clang/Basic/AlignedAllocation.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
@@ -34,6 +34,7 @@
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
+#include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/SemaLambda.h"
 #include "clang/Sema/TemplateDeduction.h"
 #include "llvm/ADT/APInt.h"
@@ -1447,122 +1448,89 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
   return Result;
 }
 
-bool Sema::isUsualDeallocationFunction(const CXXMethodDecl *Method) {
-  // [CUDA] Ignore this function, if we can't call it.
-  const FunctionDecl *Caller = dyn_cast<FunctionDecl>(CurContext);
-  if (getLangOpts().CUDA &&
-      IdentifyCUDAPreference(Caller, Method) <= CFP_WrongSide)
-    return false;
 
-  SmallVector<const FunctionDecl*, 4> PreventedBy;
-  bool Result = Method->isUsualDeallocationFunction(PreventedBy);
+namespace {
+struct DeallocFnInfo : UsualDeallocationInfo {
+  using Base = UsualDeallocationInfo;
 
-  if (Result || !getLangOpts().CUDA || PreventedBy.empty())
-    return Result;
+  DeallocFnInfo() : Base(), Found() {}
+  DeallocFnInfo(Sema &S, DeclAccessPair Found)
+      : Base(UsualDeallocationInfo::Create(
+            S.Context, dyn_cast<FunctionDecl>(Found->getUnderlyingDecl()))),
+        Found(Found), CUDAPref(Sema::CFP_Native) {
 
-  // In case of CUDA, return true if none of the 1-argument deallocator
-  // functions are actually callable.
-  return llvm::none_of(PreventedBy, [&](const FunctionDecl *FD) {
-    assert(FD->getNumParams() == 1 &&
-           "Only single-operand functions should be in PreventedBy");
-    return IdentifyCUDAPreference(Caller, FD) >= CFP_HostDevice;
-  });
+    // A function template declaration is never a usual deallocation function.
+    if (!getDecl())
+      return;
+
+    // In CUDA, determine how much we'd like / dislike to call this.
+    if (S.getLangOpts().CUDA)
+      if (auto *Caller = dyn_cast<FunctionDecl>(S.CurContext))
+        CUDAPref = S.IdentifyCUDAPreference(Caller, getDecl());
+
+    if (const CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(FD)) {
+      // [CUDA] Ignore this function, if we can't call it.
+      const FunctionDecl *Caller = dyn_cast<FunctionDecl>(S.CurContext);
+      if (S.getLangOpts().CUDA &&
+          S.IdentifyCUDAPreference(Caller, Method) <= Sema::CFP_WrongSide) {
+        IsUsual = false;
+        return;
+      }
+
+      if (isUsual() || !S.getLangOpts().CUDA || getPreventedBy().empty())
+        return;
+
+      // In case of CUDA, return true if none of the 1-argument deallocator
+      // functions are actually callable.
+      IsUsual = llvm::none_of(getPreventedBy(), [&](const FunctionDecl *FD) {
+        assert(FD->getNumParams() == 1 &&
+               "Only single-operand functions should be in PreventedBy");
+        return S.IdentifyCUDAPreference(Caller, FD) >= Sema::CFP_HostDevice;
+      });
+    }
+  }
+
+  explicit operator bool() const { return getDecl(); }
+
+  FunctionDecl *getDecl() const { return const_cast<FunctionDecl *>(FD); }
+
+  bool isBetterThan(const DeallocFnInfo &Other, bool WantSize,
+                    bool WantAlign) const {
+    // C++ P0722:
+    //   A destroying operator delete is preferred over a non-destroying
+    //   operator delete.
+    if (isDestroying() != Other.isDestroying())
+      return isDestroying();
+
+    // C++17 [expr.delete]p10:
+    //   If the type has new-extended alignment, a function with a parameter
+    //   of type std::align_val_t is preferred; otherwise a function without
+    //   such a parameter is preferred
+    if (isAligned() != Other.isAligned())
+      return isAligned() == WantAlign;
+
+    if (isSized() != Other.isSized())
+      return isSized() == WantSize;
+
+    // Use CUDA call preference as a tiebreaker.
+    return CUDAPref > Other.CUDAPref;
+  }
+
+  DeclAccessPair Found;
+  Sema::CUDAFunctionPreference CUDAPref;
+};
+} // namespace
+
+bool Sema::isUsualDeallocationFunction(const FunctionDecl *FD) {
+  return DeallocFnInfo(*this, DeclAccessPair::make(
+                                  const_cast<FunctionDecl *>(FD), AS_public))
+      .isUsual();
 }
 
 /// Determine whether the given function is a non-placement
 /// deallocation function.
 static bool isNonPlacementDeallocationFunction(Sema &S, FunctionDecl *FD) {
-  if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(FD))
-    return S.isUsualDeallocationFunction(Method);
-
-  if (FD->getOverloadedOperator() != OO_Delete &&
-      FD->getOverloadedOperator() != OO_Array_Delete)
-    return false;
-
-  unsigned UsualParams = 1;
-
-  if (S.getLangOpts().SizedDeallocation && UsualParams < FD->getNumParams() &&
-      S.Context.hasSameUnqualifiedType(
-          FD->getParamDecl(UsualParams)->getType(),
-          S.Context.getSizeType()))
-    ++UsualParams;
-
-  if (S.getLangOpts().AlignedAllocation && UsualParams < FD->getNumParams() &&
-      S.Context.hasSameUnqualifiedType(
-          FD->getParamDecl(UsualParams)->getType(),
-          S.Context.getTypeDeclType(S.getStdAlignValT())))
-    ++UsualParams;
-
-  return UsualParams == FD->getNumParams();
-}
-
-namespace {
-  struct UsualDeallocFnInfo {
-    UsualDeallocFnInfo() : Found(), FD(nullptr) {}
-    UsualDeallocFnInfo(Sema &S, DeclAccessPair Found)
-        : Found(Found), FD(dyn_cast<FunctionDecl>(Found->getUnderlyingDecl())),
-          Destroying(false), HasSizeT(false), HasAlignValT(false),
-          CUDAPref(Sema::CFP_Native) {
-      // A function template declaration is never a usual deallocation function.
-      if (!FD)
-        return;
-      unsigned UsualParams = 1;
-      if (FD->isDestroyingOperatorDelete()) {
-        Destroying = true;
-        ++UsualParams;
-      }
-      if (FD->getNumParams() > UsualParams &&
-          S.Context.hasSameUnqualifiedType(
-              FD->getParamDecl(UsualParams)->getType(),
-              S.Context.getSizeType())
-          //FD->getParamDecl(UsualParams)->getType()->isIntegerType() &&
-          //!FD->getParamDecl(UsualParams)->getType()->isEnumeralType()
-          ) {
-        HasSizeT = true;
-        ++UsualParams;
-      }
-
-      if (FD->getNumParams() > UsualParams &&
-          FD->getParamDecl(UsualParams)->getType()->isAlignValT()) {
-        HasAlignValT = true;
-        ++UsualParams;
-      }
-
-      // In CUDA, determine how much we'd like / dislike to call this.
-      if (S.getLangOpts().CUDA)
-        if (auto *Caller = dyn_cast<FunctionDecl>(S.CurContext))
-          CUDAPref = S.IdentifyCUDAPreference(Caller, FD);
-    }
-
-    explicit operator bool() const { return FD; }
-
-    bool isBetterThan(const UsualDeallocFnInfo &Other, bool WantSize,
-                      bool WantAlign) const {
-      // C++ P0722:
-      //   A destroying operator delete is preferred over a non-destroying
-      //   operator delete.
-      if (Destroying != Other.Destroying)
-        return Destroying;
-
-      // C++17 [expr.delete]p10:
-      //   If the type has new-extended alignment, a function with a parameter
-      //   of type std::align_val_t is preferred; otherwise a function without
-      //   such a parameter is preferred
-      if (HasAlignValT != Other.HasAlignValT)
-        return HasAlignValT == WantAlign;
-
-      if (HasSizeT != Other.HasSizeT)
-        return HasSizeT == WantSize;
-
-      // Use CUDA call preference as a tiebreaker.
-      return CUDAPref > Other.CUDAPref;
-    }
-
-    DeclAccessPair Found;
-    FunctionDecl *FD;
-    bool Destroying, HasSizeT, HasAlignValT;
-    Sema::CUDAFunctionPreference CUDAPref;
-  };
+  return DeallocFnInfo(S, DeclAccessPair::make(FD, AS_none)).isUsual();
 }
 
 /// Determine whether a type has new-extended alignment. This may be called when
@@ -1577,14 +1545,14 @@ static bool hasNewExtendedAlignment(Sema &S, QualType AllocType) {
 
 /// Select the correct "usual" deallocation function to use from a selection of
 /// deallocation functions (either global or class-scope).
-static UsualDeallocFnInfo resolveDeallocationOverload(
+static DeallocFnInfo resolveDeallocationOverload(
     Sema &S, LookupResult &R, bool WantSize, bool WantAlign,
-    llvm::SmallVectorImpl<UsualDeallocFnInfo> *BestFns = nullptr) {
-  UsualDeallocFnInfo Best;
+    llvm::SmallVectorImpl<DeallocFnInfo> *BestFns = nullptr) {
+  DeallocFnInfo Best;
 
   for (auto I = R.begin(), E = R.end(); I != E; ++I) {
-    UsualDeallocFnInfo Info(S, I.getPair());
-    if (!Info || !isNonPlacementDeallocationFunction(S, Info.FD) ||
+    DeallocFnInfo Info(S, I.getPair());
+    if (!Info || !isNonPlacementDeallocationFunction(S, Info.getDecl()) ||
         Info.CUDAPref == Sema::CFP_Never)
       continue;
 
@@ -1644,7 +1612,7 @@ static bool doesUsualArrayDeleteWantSize(Sema &S, SourceLocation loc,
   auto Best = resolveDeallocationOverload(
       S, ops, /*WantSize*/false,
       /*WantAlign*/hasNewExtendedAlignment(S, allocType));
-  return Best && Best.HasSizeT;
+  return Best && Best.isSized();
 }
 
 /// Parsed a C++ 'new' expression (C++ 5.3.4).
@@ -2572,18 +2540,18 @@ bool Sema::FindAllocationFunctions(SourceLocation StartLoc, SourceRange Range,
     // Per [expr.delete]p10, this lookup prefers a member operator delete
     // without a size_t argument, but prefers a non-member operator delete
     // with a size_t where possible (which it always is in this case).
-    llvm::SmallVector<UsualDeallocFnInfo, 4> BestDeallocFns;
-    UsualDeallocFnInfo Selected = resolveDeallocationOverload(
+    llvm::SmallVector<DeallocFnInfo, 4> BestDeallocFns;
+    DeallocFnInfo Selected = resolveDeallocationOverload(
         *this, FoundDelete, /*WantSize*/ FoundGlobalDelete,
         /*WantAlign*/ hasNewExtendedAlignment(*this, AllocElemType),
         &BestDeallocFns);
     if (Selected)
-      Matches.push_back(std::make_pair(Selected.Found, Selected.FD));
+      Matches.push_back(std::make_pair(Selected.Found, Selected.getDecl()));
     else {
       // If we failed to select an operator, all remaining functions are viable
       // but ambiguous.
       for (auto Fn : BestDeallocFns)
-        Matches.push_back(std::make_pair(Fn.Found, Fn.FD));
+        Matches.push_back(std::make_pair(Fn.Found, Fn.getDecl()));
     }
   }
 
@@ -2602,19 +2570,19 @@ bool Sema::FindAllocationFunctions(SourceLocation StartLoc, SourceRange Range,
     //   is ill-formed.
     if (getLangOpts().CPlusPlus11 && isPlacementNew &&
         isNonPlacementDeallocationFunction(*this, OperatorDelete)) {
-      UsualDeallocFnInfo Info(*this,
-                              DeclAccessPair::make(OperatorDelete, AS_public));
+      DeallocFnInfo Info(*this,
+                         DeclAccessPair::make(OperatorDelete, AS_public));
       // Core issue, per mail to core reflector, 2016-10-09:
       //   If this is a member operator delete, and there is a corresponding
       //   non-sized member operator delete, this isn't /really/ a sized
       //   deallocation function, it just happens to have a size_t parameter.
-      bool IsSizedDelete = Info.HasSizeT;
+      bool IsSizedDelete = Info.isSized();
       if (IsSizedDelete && !FoundGlobalDelete) {
         auto NonSizedDelete =
-            resolveDeallocationOverload(*this, FoundDelete, /*WantSize*/false,
-                                        /*WantAlign*/Info.HasAlignValT);
-        if (NonSizedDelete && !NonSizedDelete.HasSizeT &&
-            NonSizedDelete.HasAlignValT == Info.HasAlignValT)
+            resolveDeallocationOverload(*this, FoundDelete, /*WantSize*/ false,
+                                        /*WantAlign*/ Info.isAligned());
+        if (NonSizedDelete && !NonSizedDelete.isSized() &&
+            NonSizedDelete.isAligned() == Info.isAligned())
           IsSizedDelete = false;
       }
 
@@ -2873,7 +2841,7 @@ FunctionDecl *Sema::FindUsualDeallocationFunction(SourceLocation StartLoc,
   auto Result = resolveDeallocationOverload(*this, FoundDelete, CanProvideSize,
                                             Overaligned);
   assert(Result.FD && "operator delete missing from global scope?");
-  return Result.FD;
+  return Result.getDecl();
 }
 
 FunctionDecl *Sema::FindDeallocationFunctionForDestructor(SourceLocation Loc,
@@ -2910,13 +2878,13 @@ bool Sema::FindDeallocationFunction(SourceLocation StartLoc, CXXRecordDecl *RD,
   // C++17 [expr.delete]p10:
   //   If the deallocation functions have class scope, the one without a
   //   parameter of type std::size_t is selected.
-  llvm::SmallVector<UsualDeallocFnInfo, 4> Matches;
+  llvm::SmallVector<DeallocFnInfo, 4> Matches;
   resolveDeallocationOverload(*this, Found, /*WantSize*/ false,
                               /*WantAlign*/ Overaligned, &Matches);
 
   // If we could find an overload, use it.
   if (Matches.size() == 1) {
-    Operator = cast<CXXMethodDecl>(Matches[0].FD);
+    Operator = cast<CXXMethodDecl>(Matches[0].getDecl());
 
     // FIXME: DiagnoseUseOfDecl?
     if (Operator->isDeleted()) {
@@ -3369,9 +3337,9 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
         // function we just found.
         else if (OperatorDelete && isa<CXXMethodDecl>(OperatorDelete))
           UsualArrayDeleteWantsSize =
-            UsualDeallocFnInfo(*this,
-                               DeclAccessPair::make(OperatorDelete, AS_public))
-              .HasSizeT;
+              DeallocFnInfo(*this,
+                            DeclAccessPair::make(OperatorDelete, AS_public))
+                  .isSized();
       }
 
       if (!PointeeRD->hasIrrelevantDestructor())

@@ -28,6 +28,7 @@
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/UnresolvedSet.h"
+#include "clang/AST/UsualDeallocationInfo.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
@@ -2028,34 +2029,48 @@ CXXMethodDecl *CXXMethodDecl::getDevirtualizedMethod(const Expr *Base,
   return nullptr;
 }
 
-bool CXXMethodDecl::isUsualDeallocationFunction(
-    SmallVectorImpl<const FunctionDecl *> &PreventedBy) const {
-  assert(PreventedBy.empty() && "PreventedBy is expected to be empty");
-  if (getOverloadedOperator() != OO_Delete &&
-      getOverloadedOperator() != OO_Array_Delete)
-    return false;
+UsualDeallocationInfo UsualDeallocationInfo::Create(const ASTContext &Context,
+                                                    const FunctionDecl *FD) {
+  UsualDeallocationInfo Info(FD);
+  if (!FD)
+    return Info;
+
+  if (FD->getOverloadedOperator() != OO_Delete &&
+      FD->getOverloadedOperator() != OO_Array_Delete)
+    return Info;
+
+  const auto *MD = dyn_cast<CXXMethodDecl>(FD);
+
+  Info.IsDelete = true;
 
   // C++ [basic.stc.dynamic.deallocation]p2:
   //   A template instance is never a usual deallocation function,
   //   regardless of its signature.
-  if (getPrimaryTemplate())
-    return false;
+  if (FD->getPrimaryTemplate()) {
+    Info.IsUsual = false;
+    return Info;
+  }
 
   // C++ [basic.stc.dynamic.deallocation]p2:
   //   If a class T has a member deallocation function named operator delete
   //   with exactly one parameter, then that function is a usual (non-placement)
   //   deallocation function. [...]
-  if (getNumParams() == 1)
-    return true;
-  unsigned UsualParams = 1;
+  if (MD && MD->getNumParams() == 1) {
+    Info.IsUsual = true;
+    return Info;
+  }
+
+  Info.UsualParams = 1;
 
   // C++ P0722:
   //   A destroying operator delete is a usual deallocation function if
   //   removing the std::destroying_delete_t parameter and changing the
   //   first parameter type from T* to void* results in the signature of
   //   a usual deallocation function.
-  if (isDestroyingOperatorDelete())
-    ++UsualParams;
+  if (FD->isDestroyingOperatorDelete()) {
+    Info.IsDestroying = true;
+    ++Info.UsualParams;
+  }
 
   // C++ <=14 [basic.stc.dynamic.deallocation]p2:
   //   [...] If class T does not declare such an operator delete but does
@@ -2067,37 +2082,63 @@ bool CXXMethodDecl::isUsualDeallocationFunction(
   //   (void* [, size_t] [, std::align_val_t] [, ...])
   // and all such functions are usual deallocation functions. It's not clear
   // that allowing varargs functions was intentional.
-  ASTContext &Context = getASTContext();
-  if (UsualParams < getNumParams() &&
-      Context.hasSameUnqualifiedType(getParamDecl(UsualParams)->getType(),
-                                     Context.getSizeType()))
-    ++UsualParams;
+  // ASTContext &Context = getASTContext();
+  if (Info.UsualParams < FD->getNumParams() &&
+      Context.hasSameUnqualifiedType(
+          FD->getParamDecl(Info.UsualParams)->getType(),
+          Context.getSizeType())) {
+    if (!Context.getLangOpts().SizedDeallocation) {
+      Info.IsSized = true;
+      ++Info.UsualParams;
+    } else {
+      Info.IsUsual = false;
+      return Info;
+    }
+  }
 
-  if (UsualParams < getNumParams() &&
-      getParamDecl(UsualParams)->getType()->isAlignValT())
-    ++UsualParams;
+  if (Info.UsualParams < FD->getNumParams() &&
+      FD->getParamDecl(Info.UsualParams)->getType()->isAlignValT()) {
+    Info.IsAligned = true;
+    ++Info.UsualParams;
+  }
 
-  if (UsualParams != getNumParams())
-    return false;
+  if (Info.UsualParams != FD->getNumParams()) {
+    Info.IsUsual = false;
+    return Info;
+  }
 
   // In C++17 onwards, all potential usual deallocation functions are actual
   // usual deallocation functions.
-  if (Context.getLangOpts().AlignedAllocation)
-    return true;
+  if (Context.getLangOpts().AlignedAllocation) {
+    Info.IsUsual = true;
+    return Info;
+  }
 
-  // This function is a usual deallocation function if there are no
-  // single-parameter deallocation functions of the same kind.
-  DeclContext::lookup_result R = getDeclContext()->lookup(getDeclName());
-  bool Result = true;
-  for (const auto *D : R) {
-    if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
-      if (FD->getNumParams() == 1) {
-        PreventedBy.push_back(FD);
-        Result = false;
+  Info.IsUsual = true;
+
+  if (MD) {
+    // This function is a usual deallocation function if there are no
+    // single-parameter deallocation functions of the same kind.
+    DeclContext::lookup_result R =
+        MD->getDeclContext()->lookup(MD->getDeclName());
+    for (const auto *D : R) {
+      if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
+        if (FD->getNumParams() == 1) {
+          Info.PreventedBy.push_back(FD);
+          Info.IsUsual = false;
+        }
       }
     }
   }
-  return Result;
+
+  return Info;
+}
+
+const SmallVectorImpl<const FunctionDecl *> &
+UsualDeallocationInfo::getPreventedBy() const {
+  assert(FD && isa<CXXMethodDecl>(FD) &&
+         "PreventedBy can only be accessed for methods");
+  return PreventedBy;
 }
 
 bool CXXMethodDecl::isCopyAssignmentOperator() const {
