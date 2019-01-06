@@ -2086,13 +2086,8 @@ UsualDeallocationInfo UsualDeallocationInfo::Create(const ASTContext &Context,
   if (UsualParams < FD->getNumParams() &&
       Context.hasSameUnqualifiedType(FD->getParamDecl(UsualParams)->getType(),
                                      Context.getSizeType())) {
-    if (!Context.getLangOpts().SizedDeallocation) {
       Info.IsSized = true;
       ++UsualParams;
-    } else {
-      Info.IsUsual = false;
-      return Info;
-    }
   }
 
   if (UsualParams < FD->getNumParams() &&
