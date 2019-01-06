@@ -1514,7 +1514,10 @@ namespace {
       if (FD->getNumParams() > UsualParams &&
           S.Context.hasSameUnqualifiedType(
               FD->getParamDecl(UsualParams)->getType(),
-              S.Context.getSizeType())) {
+              S.Context.getSizeType())
+          //FD->getParamDecl(UsualParams)->getType()->isIntegerType() &&
+          //!FD->getParamDecl(UsualParams)->getType()->isEnumeralType()
+          ) {
         HasSizeT = true;
         ++UsualParams;
       }
