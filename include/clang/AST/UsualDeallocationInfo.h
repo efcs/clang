@@ -19,7 +19,6 @@
 
 namespace clang {
 class ASTContext;
-class CXXMethodDecl;
 class FunctionDecl;
 
 class UsualDeallocationInfo {
@@ -50,7 +49,6 @@ public:
   const FunctionDecl *FD;
 
 protected:
-  unsigned UsualParams = 0;
   bool IsDelete = false;
   bool IsUsual = false;
   bool IsDestroying = false;

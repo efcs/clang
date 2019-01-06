@@ -2060,7 +2060,7 @@ UsualDeallocationInfo UsualDeallocationInfo::Create(const ASTContext &Context,
     return Info;
   }
 
-  Info.UsualParams = 1;
+  unsigned UsualParams = 1;
 
   // C++ P0722:
   //   A destroying operator delete is a usual deallocation function if
@@ -2069,7 +2069,7 @@ UsualDeallocationInfo UsualDeallocationInfo::Create(const ASTContext &Context,
   //   a usual deallocation function.
   if (FD->isDestroyingOperatorDelete()) {
     Info.IsDestroying = true;
-    ++Info.UsualParams;
+    ++UsualParams;
   }
 
   // C++ <=14 [basic.stc.dynamic.deallocation]p2:
@@ -2083,26 +2083,25 @@ UsualDeallocationInfo UsualDeallocationInfo::Create(const ASTContext &Context,
   // and all such functions are usual deallocation functions. It's not clear
   // that allowing varargs functions was intentional.
   // ASTContext &Context = getASTContext();
-  if (Info.UsualParams < FD->getNumParams() &&
-      Context.hasSameUnqualifiedType(
-          FD->getParamDecl(Info.UsualParams)->getType(),
-          Context.getSizeType())) {
+  if (UsualParams < FD->getNumParams() &&
+      Context.hasSameUnqualifiedType(FD->getParamDecl(UsualParams)->getType(),
+                                     Context.getSizeType())) {
     if (!Context.getLangOpts().SizedDeallocation) {
       Info.IsSized = true;
-      ++Info.UsualParams;
+      ++UsualParams;
     } else {
       Info.IsUsual = false;
       return Info;
     }
   }
 
-  if (Info.UsualParams < FD->getNumParams() &&
-      FD->getParamDecl(Info.UsualParams)->getType()->isAlignValT()) {
+  if (UsualParams < FD->getNumParams() &&
+      FD->getParamDecl(UsualParams)->getType()->isAlignValT()) {
     Info.IsAligned = true;
-    ++Info.UsualParams;
+    ++UsualParams;
   }
 
-  if (Info.UsualParams != FD->getNumParams()) {
+  if (UsualParams != FD->getNumParams()) {
     Info.IsUsual = false;
     return Info;
   }
