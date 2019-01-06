@@ -2250,6 +2250,16 @@ def TypeVisibility : InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+
+def ADLCallAttr : InheritableAttr {
+  let Clone = 0;
+  let Spellings = [Clang<"enable_adl">, Clang<"disable_adl">];
+  let Accessors = [Accessor<"isADLEnabled", [Clang<"enable_adl">]>,
+                   Accessor<"isADLDisabled", [Clang<"disable_adl">]>];
+  let MeaningfulToClassTemplateDefinition = 1;
+  let Documentation = [Undocumented];
+}
+
 def VecReturn : InheritableAttr {
   // This attribute does not have a C [[]] spelling because it only appertains
   // to C++ struct/class/union.
