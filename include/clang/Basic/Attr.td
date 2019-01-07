@@ -2251,12 +2251,12 @@ def TypeVisibility : InheritableAttr {
 }
 
 
-def ADLCallAttr : InheritableAttr {
+def DisableADLCall : InheritableAttr {
   let Clone = 0;
   let Spellings = [Clang<"enable_adl">, Clang<"disable_adl">];
   let Accessors = [Accessor<"isADLEnabled", [Clang<"enable_adl">]>,
                    Accessor<"isADLDisabled", [Clang<"disable_adl">]>];
-  let MeaningfulToClassTemplateDefinition = 1;
+                   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 
