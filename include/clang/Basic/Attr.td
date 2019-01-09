@@ -89,6 +89,10 @@ def NonBitField : SubsetSubject<Field,
                                 [{!S->isBitField()}],
                                 "non-bit-field non-static data members">;
 
+def FreeFunction : SubsetSubject<Function,
+                                 [{!S->isCXXClassMember()}],
+                                 "non-member functions">;
+
 def NonStaticCXXMethod : SubsetSubject<CXXMethod,
                                        [{!S->isStatic()}],
                                        "non-static member functions">;
@@ -378,8 +382,11 @@ class AttrSubjectMatcherRule<string name, list<AttrSubject> subjects,
 def SubRuleForCXXMethod : AttrSubjectMatcherSubRule<"is_member", [CXXMethod]> {
   let LangOpts = [CPlusPlus];
 }
+def SubRuleForNonMember : AttrSubjectMatcherSubRule<"is_non_member", [FreeFunction]> {
+
+}
 def SubjectMatcherForFunction : AttrSubjectMatcherRule<"function", [Function], [
-  SubRuleForCXXMethod
+  SubRuleForCXXMethod, SubRuleForNonMember
 ]>;
 // hasType is abstract, it should be used with one of the sub-rules.
 def SubjectMatcherForType : AttrSubjectMatcherRule<"hasType", [], [
@@ -2251,12 +2258,18 @@ def TypeVisibility : InheritableAttr {
 }
 
 
-def DisableADLCall : InheritableAttr {
+def NoADL : InheritableAttr {
   let Clone = 0;
-  let Spellings = [Clang<"enable_adl">, Clang<"disable_adl">];
-  let Accessors = [Accessor<"isADLEnabled", [Clang<"enable_adl">]>,
-                   Accessor<"isADLDisabled", [Clang<"disable_adl">]>];
-                   let Subjects = SubjectList<[Function]>;
+  let Spellings = [Clang<"no_adl">, Clang<"allow_adl">];
+  let Args = [BoolArgument<"FromPragma", /*opt=*/0, /*fake=*/1>];
+  let Accessors = [Accessor<"isADLAllowed", [Clang<"allow_adl">]>];
+  let Subjects = SubjectList<[FreeFunction]>;
+  let AdditionalMembers = [{
+    static bool isADLAllowedForSpelling(Spelling S) {
+      return S >=  GNU_allow_adl;
+    }
+    bool isFromPragma() const { return fromPragma; }
+  }];
   let Documentation = [Undocumented];
 }
 

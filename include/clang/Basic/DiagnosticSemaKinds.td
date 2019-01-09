@@ -20,6 +20,9 @@ def note_defined_here : Note<"%0 defined here">;
 
 def warn_disabled_adl_call : Warning<"call to function using ADL is not allowed">,
   InGroup<DisabledADLCall>;
+def err_attribute_redeclaration : Error<
+  "'%0' attribute does not appear on the first declaration of %1">;
+def err_mismatched_adl_attr : Error<"ADL attribute does not match previous declaration">;
 
 // For loop analysis
 def warn_variables_not_in_loop_body : Warning<

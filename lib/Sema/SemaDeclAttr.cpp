@@ -6212,6 +6212,51 @@ static void handleInternalLinkageAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     D->addAttr(Internal);
 }
 
+NoADLAttr *Sema::mergeNoADLAttr(Decl *D, const NoADLAttr &AL) {
+  if (const auto *Old = D->getAttr<NoADLAttr>()) {
+    if (Old->isFromPragma() && !AL.isFromPragma()) {
+      D->dropAttr<NoADLAttr>();
+    } else if (Old->isADLAllowed() == AL.isADLAllowed()) {
+      return nullptr;
+    } else {
+      Diag(Old->getLocation(), diag::err_mismatched_adl_attr)
+          << Old->getRange();
+      Diag(AL.getLocation(), diag::note_conflicting_attribute)
+          << AL.getRange();
+      return nullptr;
+    }
+  }
+
+  return ::new (Context) NoADLAttr(AL.getRange(), Context, AL.isFromPragma(),
+                                   AL.getSpellingListIndex());
+}
+
+NoADLAttr *Sema::mergeNoADLAttr(Decl *D, const ParsedAttr &AL) {
+  bool IntroducedByPragma = this->PragmaAttributeCurrentTargetDecl == D;
+
+  if (const auto *Old = D->getAttr<NoADLAttr>()) {
+    if (IntroducedByPragma)
+      return nullptr;
+    if (Old->isADLAllowed() !=
+        NoADLAttr::isADLAllowedForSpelling(static_cast<NoADLAttr::Spelling>(
+            AL.getAttributeSpellingListIndex()))) {
+      Diag(AL.getRange().getBegin(), diag::err_mismatched_adl_attr)
+          << AL.getRange();
+      Diag(Old->getLocation(), diag::note_conflicting_attribute)
+          << Old->getRange();
+    }
+    return nullptr;
+  }
+
+  return ::new (Context) NoADLAttr(AL.getRange(), Context, IntroducedByPragma,
+                                   AL.getAttributeSpellingListIndex());
+}
+
+static void handleNoADLAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  if (NoADLAttr *AT = S.mergeNoADLAttr(D, AL))
+    D->addAttr(AT);
+}
+
 static void handleOpenCLNoSVMAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (S.LangOpts.OpenCLVersion != 200)
     S.Diag(AL.getLoc(), diag::err_attribute_requires_opencl_version)
@@ -6944,8 +6989,8 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_ExcludeFromExplicitInstantiation:
     handleSimpleAttribute<ExcludeFromExplicitInstantiationAttr>(S, D, AL);
     break;
-  case ParsedAttr::AT_DisableADLCall:
-    handleSimpleAttribute<DisableADLCallAttr>(S, D, AL);
+  case ParsedAttr::AT_NoADL:
+    handleNoADLAttr(S, D, AL);
     break;
   case ParsedAttr::AT_LTOVisibilityPublic:
     handleSimpleAttribute<LTOVisibilityPublicAttr>(S, D, AL);

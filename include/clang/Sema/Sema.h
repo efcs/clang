@@ -2503,6 +2503,9 @@ public:
                                     const SpeculativeLoadHardeningAttr &AL);
   OptimizeNoneAttr *mergeOptimizeNoneAttr(Decl *D, SourceRange Range,
                                           unsigned AttrSpellingListIndex);
+  NoADLAttr *mergeNoADLAttr(Decl *D, const ParsedAttr &AL);
+  NoADLAttr *mergeNoADLAttr(Decl *D, const NoADLAttr &AL);
+
   InternalLinkageAttr *mergeInternalLinkageAttr(Decl *D, const ParsedAttr &AL);
   InternalLinkageAttr *mergeInternalLinkageAttr(Decl *D,
                                                 const InternalLinkageAttr &AL);

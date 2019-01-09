@@ -5885,14 +5885,11 @@ ExprResult Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
         << Fn->getSourceRange());
 
   if (FDecl) {
-    if (auto *AT = FDecl->getAttr<DisableADLCallAttr>()) {
-      if (AT->isADLDisabled() && TheCall->usesADL()) {
+    if (auto *AT = FDecl->getAttr<NoADLAttr>()) {
+      if (!AT->isADLAllowed() && TheCall->usesADL()) {
         Diag(TheCall->getBeginLoc(), diag::warn_disabled_adl_call)
             << TheCall->getSourceRange();
         Diag(FDecl->getLocation(), diag::note_callee_decl) << FDecl;
-
-        Diag(AT->getLocation(), diag::note_entity_declared_at)
-            << AT->getSpelling() << AT->getRange();
       }
     }
   }

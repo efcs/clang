@@ -2479,6 +2479,8 @@ static bool mergeDeclAttribute(Sema &S, NamedDecl *D,
     NewAttr = S.mergeOptimizeNoneAttr(D, OA->getRange(), AttrSpellingListIndex);
   else if (const auto *InternalLinkageA = dyn_cast<InternalLinkageAttr>(Attr))
     NewAttr = S.mergeInternalLinkageAttr(D, *InternalLinkageA);
+  else if (const auto *AA = dyn_cast<NoADLAttr>(Attr))
+    NewAttr = S.mergeNoADLAttr(D, *AA);
   else if (const auto *CommonA = dyn_cast<CommonAttr>(Attr))
     NewAttr = S.mergeCommonAttr(D, *CommonA);
   else if (isa<AlignedAttr>(Attr))
@@ -2981,6 +2983,17 @@ static void adjustDeclContextForDeclaratorDecl(DeclaratorDecl *NewD,
     FixSemaDC(VD->getDescribedVarTemplate());
 }
 
+template <class AttrTy>
+static void diagnoseAttrRedecl(Sema &S, FunctionDecl *New, FunctionDecl *Old) {
+  if (New->hasAttr<AttrTy>() && !Old->hasAttr<AttrTy>()) {
+    Attr *AT = New->getAttr<AttrTy>();
+    S.Diag(New->getLocation(), diag::err_attribute_redeclaration)
+        << AT->getSpelling() << New->getDeclName();
+    S.notePreviousDefinition(Old, New->getLocation());
+    New->dropAttr<AttrTy>();
+  }
+}
+
 /// MergeFunctionDecl - We just parsed a function 'New' from
 /// declarator D which has the same name and scope as a previous
 /// declaration 'Old'.  Figure out how to resolve this situation,
@@ -3055,13 +3068,8 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, NamedDecl *&OldD,
     }
   }
 
-  if (New->hasAttr<InternalLinkageAttr>() &&
-      !Old->hasAttr<InternalLinkageAttr>()) {
-    Diag(New->getLocation(), diag::err_internal_linkage_redeclaration)
-        << New->getDeclName();
-    notePreviousDefinition(Old, New->getLocation());
-    New->dropAttr<InternalLinkageAttr>();
-  }
+  diagnoseAttrRedecl<InternalLinkageAttr>(*this, New, Old);
+  diagnoseAttrRedecl<NoADLAttr>(*this, New, Old);
 
   if (CheckRedeclarationModuleOwnership(New, Old))
     return true;
