@@ -40,7 +40,11 @@ namespace tooling {
 std::string replaceNestedName(const NestedNameSpecifier *Use,
                               const DeclContext *UseContext,
                               const NamedDecl *FromDecl,
-                              StringRef ReplacementString);
+                              StringRef ReplacementString,
+                              bool RequireFunctionQualification = false);
+
+std::string createQualifiedName(const DeclContext *UseContext,
+                                const NamedDecl *ForDecl);
 
 struct RenameOptions {
   bool Minimize = true;

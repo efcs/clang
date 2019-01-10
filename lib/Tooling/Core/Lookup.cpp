@@ -155,10 +155,19 @@ static bool isAmbiguousNameInScope(StringRef Spelling, StringRef QName,
   return false;
 }
 
+std::string replaceNestedNameImpl(const NestedNameSpecifier *Use,
+                                  const DeclContext *UseContext,
+                                  const NamedDecl *FromDecl,
+                                  StringRef ReplacementString, bool UsesADL = false)
+{
+
+}
+
 std::string tooling::replaceNestedName(const NestedNameSpecifier *Use,
                                        const DeclContext *UseContext,
                                        const NamedDecl *FromDecl,
-                                       StringRef ReplacementString) {
+                                       StringRef ReplacementString,
+                                       bool RequireFunctionQualification) {
   assert(ReplacementString.startswith("::") &&
          "Expected fully-qualified name!");
 
@@ -170,7 +179,8 @@ std::string tooling::replaceNestedName(const NestedNameSpecifier *Use,
   // However, if the `FromDecl` is a class forward declaration, the reference is
   // still considered as referring to the original definition, so we can't do a
   // raw name replacement in this case.
-  const bool class_name_only = !Use;
+  const bool must_qualify = isa<FunctionDecl>(FromDecl) && RequireFunctionQualification;
+  const bool class_name_only = !Use && !must_qualify;
   const bool in_global_namespace =
       isa<TranslationUnitDecl>(FromDecl->getDeclContext());
   const bool is_class_forward_decl =
@@ -197,6 +207,17 @@ std::string tooling::replaceNestedName(const NestedNameSpecifier *Use,
   return isAmbiguousNameInScope(Suggested, ReplacementString, *UseContext)
              ? ReplacementString
              : Suggested;
+}
+
+std::string createQualifiedName(const DeclContext *UseContext,
+                                const NamedDecl *ForDecl) {
+  std::string FullName = "::" + ForDecl->getQualifiedNameAsString();
+  StringRef Suggested = getBestNamespaceSubstr(UseContext, FullName,
+                                               /*IsFullyQualified=*/false);
+
+  return isAmbiguousNameInScope(Suggested, FullName, *UseContext)
+         ? FullName
+         : Suggested;
 }
 
 static std::string getQualifiedName(const NamedDecl *ND, PrintingPolicy PP) {
