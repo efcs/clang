@@ -160,39 +160,114 @@ TEST(LookupTest, replaceNestedFunctionName) {
     )");
 }
 
-TEST(LookupTest, replaceNestedClassName) {
+TEST(LookupTest, qualifyFunctionNameInContext) {
   GetDeclsVisitor Visitor;
 
-  auto replaceRecordTypeLoc = [&](RecordTypeLoc Loc,
-                                  StringRef ReplacementString) {
-    const auto *FD = cast<CXXRecordDecl>(Loc.getDecl());
-    return tooling::replaceNestedName(
-        nullptr, Visitor.DeclStack.back()->getDeclContext(), FD,
-        ReplacementString);
+  auto replaceCallExpr = [&](const CallExpr *Expr,
+                             tooling::RenameOptions Opts) {
+    assert(Expr->getCalleeDecl());
+    const FunctionDecl *FD = dyn_cast<FunctionDecl>(Expr->getCalleeDecl());
+    assert(FD);
+    return tooling::qualifyFunctionNameInContext(
+        Visitor.DeclStack.back()->getDeclContext(), FD, Opts);
   };
 
-  Visitor.OnRecordTypeLoc = [&](RecordTypeLoc Type) {
-    // Filter Types by name since there are other `RecordTypeLoc` in the test
-    // file.
-    if (Type.getDecl()->getQualifiedNameAsString() == "a::b::Foo") {
-      EXPECT_EQ("x::Bar", replaceRecordTypeLoc(Type, "::a::x::Bar"));
+  const char *Header = R"cpp(
+  namespace NS {
+    struct T {};
+    void f1(T);
+    inline namespace IS {
+      void f2(T);
     }
-  };
-  Visitor.runOver("namespace a { namespace b {\n"
-                  "class Foo;\n"
-                  "namespace c { Foo f();; }\n"
-                  "} }\n");
+    namespace {
+       void f3(T) {}
+    }
+  }
+  namespace L1 { inline namespace L2 {
+    namespace LL1 {
+       struct T {};
+       void f4(T);
+    }
+  }}
+)cpp";
 
-  Visitor.OnRecordTypeLoc = [&](RecordTypeLoc Type) {
-    // Filter Types by name since there are other `RecordTypeLoc` in the test
-    // file.
-    // `a::b::Foo` in using shadow decl is not `TypeLoc`.
-    if (Type.getDecl()->getQualifiedNameAsString() == "a::b::Foo") {
-      EXPECT_EQ("Bar", replaceRecordTypeLoc(Type, "::a::x::Bar"));
+  using NamespaceList = std::vector<std::string>;
+
+  std::string AdditionalHeader;
+
+  auto MkCall = [&](StringRef S, const NamespaceList &Namespaces) {
+    std::string R = Header;
+    R += AdditionalHeader;
+    R += "\n";
+    for (StringRef NS : Namespaces) {
+      if (NS.consume_front("inline ")) {
+        R += "inline ";
+      }
+      R += "namespace ";
+      R += NS;
+      R += " {\n";
     }
+
+    R += "void test() { \n";
+    R += S;
+    R += "\n}\n";
+
+    for (unsigned I = 0; I < Namespaces.size(); ++I)
+      R += "} \n";
+
+    return R;
   };
-  Visitor.runOver("namespace a { namespace b { class Foo {}; } }\n"
-                  "namespace c { using a::b::Foo; Foo f();; }\n");
+
+  tooling::RenameOptions Opts;
+
+#define TC(Expect, Code, Namespaces)                                           \
+  do {                                                                         \
+    auto OptsCp = Opts;                                                        \
+    Visitor.OnCall = [&, OptsCp](CallExpr *Expr) {                             \
+      EXPECT_EQ(Expect, replaceCallExpr(Expr, OptsCp));                        \
+    };                                                                         \
+    Visitor.runOver(MkCall(Code, Namespaces), GetDeclsVisitor::Lang_CXX14);    \
+  } while (false)
+
+  // auto TC = [&](const char *Expect, StringRef Code, const NamespaceList
+  // &Namespaces) {
+  //
+  //};
+
+  NamespaceList TopLevel;
+  NamespaceList NS{"NS"};
+  NamespaceList NS_IS{"NS", "inline IS"};
+  NamespaceList NS_NS2{"NS", "Nested"};
+  NamespaceList L1{"L1"};
+  NamespaceList L1_L2{"L1", "inline L2"};
+  NamespaceList L1_L2_L3{"L1", "inline L2", "L3"};
+
+  TC("NS::f1", "NS::T t; f1(t);", TopLevel);
+
+  Opts.OmitInlineNamespaces = true;
+  TC("NS::f2", "NS::T t; f2(t);", TopLevel);
+  TC("NS::f2", "NS::T t; f2(t);", NS);
+
+  Opts.OmitInlineNamespaces = false;
+  TC("NS::IS::f2", "NS::T t; f2(t);", TopLevel);
+  TC("IS::f2", "NS::T t; f2(t);", NS);
+
+  TC("NS::f3", "NS::T t; f3(t);", NS);
+
+  TC("NS::f1", "T t; f1(t);", NS);
+  TC("NS::f1", "T t; f1(t);", NS_IS);
+
+  TC("LL1::f4", "LL1::T t; f4(t);", L1_L2_L3);
+
+  AdditionalHeader = R"cpp(
+namespace CXX {
+  struct MyT {
+      void foo() const;
+      void bar() { foo(); }
+  };
+}
+)cpp";
+  TC("CXX::MyT::foo", "", TopLevel);
 }
 
 } // end anonymous namespace

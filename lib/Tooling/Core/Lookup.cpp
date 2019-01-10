@@ -17,18 +17,28 @@
 using namespace clang;
 using namespace clang::tooling;
 
+const NamespaceDecl *getLastNamespace(const DeclContext *Context) {
+  while (Context) {
+    if (auto NS = dyn_cast<NamespaceDecl>(Context))
+      return NS;
+    Context = Context->getParent();
+  }
+  return nullptr;
+}
+
 // Gets all namespaces that \p Context is in as a vector (ignoring anonymous
 // namespaces). The inner namespaces come before outer namespaces in the vector.
 // For example, if the context is in the following namespace:
 //    `namespace a { namespace b { namespace c ( ... ) } }`,
 // the vector will be `{c, b, a}`.
 static llvm::SmallVector<const NamespaceDecl *, 4>
-getAllNamedNamespaces(const DeclContext *Context) {
+getAllNamedNamespaces(const DeclContext *Context, bool IgnoreAnonymous = true) {
   llvm::SmallVector<const NamespaceDecl *, 4> Namespaces;
-  auto GetNextNamedNamespace = [](const DeclContext *Context) {
+  auto GetNextNamedNamespace = [=](const DeclContext *Context) {
     // Look past non-namespaces and anonymous namespaces on FromContext.
     while (Context && (!isa<NamespaceDecl>(Context) ||
-                       cast<NamespaceDecl>(Context)->isAnonymousNamespace()))
+                       (cast<NamespaceDecl>(Context)->isAnonymousNamespace() &&
+                        IgnoreAnonymous)))
       Context = Context->getParent();
     return Context;
   };
@@ -187,4 +197,130 @@ std::string tooling::replaceNestedName(const NestedNameSpecifier *Use,
   return isAmbiguousNameInScope(Suggested, ReplacementString, *UseContext)
              ? ReplacementString
              : Suggested;
+}
+
+static std::string getQualifiedName(const NamedDecl *ND, PrintingPolicy PP) {
+  std::string QualName;
+  llvm::raw_string_ostream OS(QualName);
+  ND->printQualifiedName(OS, PP);
+  return OS.str();
+}
+
+template <class Iter>
+std::string JoinNamespaces(Iter B, Iter E, bool IgnoreInline) {
+  std::string Result;
+  for (; B != E; ++B) {
+    const NamespaceDecl *NS = *B;
+    if (NS->isAnonymousNamespace())
+      continue;
+    if (NS->isInlineNamespace() && IgnoreInline)
+      continue;
+    if (!Result.empty())
+      Result += "::";
+    Result += NS->getNameAsString();
+  }
+  return Result;
+}
+
+const NamedDecl *getBeforeNamespace(const NamedDecl *D) {
+  const DeclContext *DC = D->getDeclContext();
+  const DeclContext *LastDC = nullptr;
+
+  while (DC && !isa<NamespaceDecl>(DC)) {
+    LastDC = DC;
+    DC = DC->getParent();
+  }
+  if (!LastDC || !isa<NamedDecl>(LastDC))
+    return nullptr;
+  return cast<NamedDecl>(LastDC);
+}
+
+std::string getQualifiedNSName(const NamespaceDecl *NS, PrintingPolicy PP) {
+  assert(NS);
+  std::string Tmp = getQualifiedName(NS, PP);
+  StringRef Result(Tmp);
+  if (NS->isAnonymousNamespace()) {
+    assert(Result.endswith("(anonymous)"));
+    Tmp.erase(Tmp.size() - strlen("(anonymous)"));
+    Tmp += "(anonymous namespace)";
+  }
+  return Tmp;
+}
+
+bool isSameNS(const NamespaceDecl *LHS, const NamespaceDecl *RHS) {
+  return LHS == RHS || LHS->getCanonicalDecl() == RHS->getCanonicalDecl();
+}
+
+std::string tooling::qualifyFunctionNameInContext(const DeclContext *UseContext,
+                                                  const FunctionDecl *FromDecl,
+                                                  tooling::RenameOptions Opts) {
+  PrintingPolicy PP = FromDecl->getASTContext().getPrintingPolicy();
+  PP.SuppressUnwrittenScope = false;
+
+  auto MakeFullName = [&]() {
+    return (Opts.OmitLeadingQualifiers ? "" : "::") +
+           FromDecl->getQualifiedNameAsString();
+  };
+
+  if (!Opts.Minimize)
+    MakeFullName();
+
+  SmallVector<const NamespaceDecl *, 4> DeclNamespaces(
+      llvm::reverse(getAllNamedNamespaces(FromDecl, true)));
+  SmallVector<const NamespaceDecl *, 4> UsedNamespaces(
+      llvm::reverse(getAllNamedNamespaces(UseContext, true)));
+  auto DBegin = DeclNamespaces.begin(), DEnd = DeclNamespaces.end();
+  auto UBegin = UsedNamespaces.begin(), UEnd = UsedNamespaces.end();
+  auto DIt = DBegin, UIt = UBegin;
+  SmallVector<const NamespaceDecl *, 4> CommonPath;
+  if (Opts.Minimize) {
+    while (DIt != DEnd && UIt != UEnd && isSameNS(*DIt, *UIt)) {
+      CommonPath.push_back(*DIt);
+      ++DIt;
+      ++UIt;
+    }
+    while (DIt != DEnd) {
+      if ((*DIt)->isAnonymousNamespace()) {
+        ++DIt;
+        continue;
+      }
+      if ((*DIt)->isInlineNamespace() && Opts.OmitInlineNamespaces) {
+        ++DIt;
+        continue;
+      }
+      break;
+    }
+  }
+  std::string PrefixNSString;
+  if (DIt != DEnd || CommonPath.empty())
+    PrefixNSString = JoinNamespaces(DIt, DEnd, Opts.OmitInlineNamespaces);
+  else {
+    auto Pos = CommonPath.end();
+    while (Pos != CommonPath.begin()) {
+      --Pos;
+      auto *NS = *Pos;
+      if (!NS->isAnonymousNamespace() &&
+          (!NS->isInlineNamespace() || Opts.OmitInlineNamespaces))
+        break;
+    }
+    PrefixNSString =
+        JoinNamespaces(Pos, CommonPath.end(), Opts.OmitInlineNamespaces);
+  }
+
+  std::string FullName = getQualifiedName(FromDecl, PP);
+  std::string FullNamespacesPrefix;
+  if (auto *NS = getLastNamespace(FromDecl)) {
+    FullNamespacesPrefix = getQualifiedNSName(NS, PP);
+  }
+
+  assert(StringRef(FullName).startswith(FullNamespacesPrefix));
+  std::string NameSuffix = FullName.substr(FullNamespacesPrefix.size());
+  if (StringRef(NameSuffix).startswith("::"))
+    NameSuffix.erase(0, 2);
+
+  std::string NewName = PrefixNSString;
+  if (!NewName.empty())
+    NewName += "::";
+  NewName += NameSuffix;
+  return NewName;
 }

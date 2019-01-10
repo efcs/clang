@@ -19,6 +19,7 @@
 namespace clang {
 
 class DeclContext;
+class FunctionDecl;
 class NamedDecl;
 class NestedNameSpecifier;
 
@@ -40,6 +41,16 @@ std::string replaceNestedName(const NestedNameSpecifier *Use,
                               const DeclContext *UseContext,
                               const NamedDecl *FromDecl,
                               StringRef ReplacementString);
+
+struct RenameOptions {
+  bool Minimize = true;
+  bool OmitLeadingQualifiers = true;
+  bool OmitInlineNamespaces = true;
+};
+
+std::string qualifyFunctionNameInContext(const DeclContext *UseContext,
+                                         const FunctionDecl *FromDecl,
+                                         RenameOptions Opts = RenameOptions());
 
 } // end namespace tooling
 } // end namespace clang
