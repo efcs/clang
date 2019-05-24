@@ -4981,7 +4981,9 @@ bool CorrectionCandidateCallback::ValidateCandidate(
     return WantTypeSpecifiers || WantExpressionKeywords || WantCXXNamedCasts ||
            WantRemainingKeywords || WantObjCSuper;
 
-  bool HasNonType = false;
+  if (candidate.usesReservedName())
+
+    bool HasNonType = false;
   bool HasStaticMethod = false;
   bool HasNonStaticMethod = false;
   for (Decl *D : candidate) {
