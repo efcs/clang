@@ -99,25 +99,6 @@ enum MacroDiag {
   MD_ReservedMacro  //> #define of #undef reserved id, disabled by default
 };
 
-/// Checks if the specified identifier is reserved in the specified
-/// language.
-/// This function does not check if the identifier is a keyword.
-static bool isReservedId(StringRef Text, const LangOptions &Lang) {
-  // C++ [macro.names], C11 7.1.3:
-  // All identifiers that begin with an underscore and either an uppercase
-  // letter or another underscore are always reserved for any use.
-  if (Text.size() >= 2 && Text[0] == '_' &&
-      (isUppercase(Text[1]) || Text[1] == '_'))
-      return true;
-  // C++ [global.names]
-  // Each name that contains a double underscore ... is reserved to the
-  // implementation for any use.
-  if (Lang.CPlusPlus) {
-    if (Text.find("__") != StringRef::npos)
-      return true;
-  }
-  return false;
-}
 
 // The -fmodule-name option tells the compiler to textually include headers in
 // the specified module, meaning clang won't build the specified module. This is
@@ -140,11 +121,11 @@ static bool isForModuleBuilding(Module *M, StringRef CurrentModule,
 
 static MacroDiag shouldWarnOnMacroDef(Preprocessor &PP, IdentifierInfo *II) {
   const LangOptions &Lang = PP.getLangOpts();
-  StringRef Text = II->getName();
-  if (isReservedId(Text, Lang))
+  if (II->isReservedName(Lang))
     return MD_ReservedMacro;
   if (II->isKeyword(Lang))
     return MD_KeywordDef;
+  StringRef Text = II->getName();
   if (Lang.CPlusPlus11 && (Text.equals("override") || Text.equals("final")))
     return MD_KeywordDef;
   return MD_NoWarn;

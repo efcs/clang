@@ -303,6 +303,11 @@ public:
   /// language.
   bool isCPlusPlusKeyword(const LangOptions &LangOpts) const;
 
+  /// Checks if the specified identifier is reserved in the specified
+  /// language. (C99 7.1.3, C++ [lex.names]).
+  /// This function does not check if the identifier is a keyword.
+  bool isReservedName(const LangOptions &LangOpts);
+
   /// Get and set FETokenInfo. The language front-end is allowed to associate
   /// arbitrary metadata with this token.
   void *getFETokenInfo() const { return FETokenInfo; }

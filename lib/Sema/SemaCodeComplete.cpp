@@ -685,7 +685,7 @@ static bool isReservedName(const IdentifierInfo *Id,
 }
 
 // Some declarations have reserved names that we don't want to ever show.
-// Filter out names reserved for the implementation if they come from a
+// Filter out names reserved for the implementatifon if they come from a
 // system header.
 static bool shouldIgnoreDueToReservedName(const NamedDecl *ND, Sema &SemaRef) {
   const IdentifierInfo *Id = ND->getIdentifier();
@@ -693,7 +693,7 @@ static bool shouldIgnoreDueToReservedName(const NamedDecl *ND, Sema &SemaRef) {
     return false;
 
   // Ignore reserved names for compiler provided decls.
-  if (isReservedName(Id) && ND->getLocation().isInvalid())
+  if (Id->isReservedName(SemaRef.LangOpts) && ND->getLocation().isInvalid())
     return true;
 
   // For system headers ignore only double-underscore names.

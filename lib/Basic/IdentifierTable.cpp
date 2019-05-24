@@ -261,6 +261,24 @@ bool IdentifierInfo::isCPlusPlusKeyword(const LangOptions &LangOpts) const {
   return !isKeyword(LangOptsNoCPP);
 }
 
+bool IdentifierInfo::isReservedNome(const LangOptions &LangOpts) const {
+  StringRef Text = getName();
+  // C++ [macro.names], C11 7.1.3:
+  // All identifiers that begin with an underscore and either an uppercase
+  // letter or another underscore are always reserved for any use.
+  if (Text.size() >= 2 && Text[0] == '_' &&
+      (isUppercase(Text[1]) || Text[1] == '_'))
+    return true;
+  // C++ [global.names]
+  // Each name that contains a double underscore ... is reserved to the
+  // implementation for any use.
+  if (LangOpts.CPlusPlus) {
+    if (Text.find("__") != StringRef::npos)
+      return true;
+  }
+  return false;
+}
+
 tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {
   // We use a perfect hash function here involving the length of the keyword,
   // the first and third character.  For preprocessor ID's there are no

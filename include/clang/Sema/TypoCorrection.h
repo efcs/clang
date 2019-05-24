@@ -216,6 +216,10 @@ public:
     return CorrectionDecls.size() > 1;
   }
 
+  /// Returns true if any part of the correction requires the user to spell
+  /// a reserved identifier.
+  bool usesReservedName(const LangOptions &LangOpts) const;
+
   void setCorrectionRange(CXXScopeSpec *SS,
                           const DeclarationNameInfo &TypoName) {
     CorrectionRange = TypoName.getSourceRange();

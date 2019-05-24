@@ -4959,6 +4959,19 @@ std::string TypoCorrection::getAsString(const LangOptions &LO) const {
   return CorrectionName.getAsString();
 }
 
+bool TypoCorrection::usesReservedName(
+    const clang::LangOptions &LangOpts) const {
+  if (!CorrectionName)
+    return false;
+  if (getCorrectionAsIdentifierInfo()->isReservedName(LangOpts))
+    return true;
+  if (const auto *NNS = getCorrectionSpecifier()) {
+    if (NNS->getAsIdentifier()->isReservedName(LangOpts))
+      return true;
+  }
+  return false;
+}
+
 bool CorrectionCandidateCallback::ValidateCandidate(
     const TypoCorrection &candidate) {
   if (!candidate.isResolved())
