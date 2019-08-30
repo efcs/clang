@@ -3360,6 +3360,16 @@ templates.
   }];
 }
 
+
+def NoInlineHintDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``no_inline_hint`` attribute can be applied to functions marked `inline` to prevent Clang
+from interpreting the `inline` keyword as a optimization hint.
+  TODO
+  }];
+}
+
 def DisableTailCallsDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{

@@ -3276,6 +3276,13 @@ def ExcludeFromExplicitInstantiation : InheritableAttr {
   let MeaningfulToClassTemplateDefinition = 1;
 }
 
+def NoInlineHint : InheritableAttr {
+  let Spellings = [Clang<"no_inline_hint">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [NoInlineHintDocs];
+  let MeaningfulToClassTemplateDefinition = 1;
+}
+
 def Reinitializes : InheritableAttr {
   let Spellings = [Clang<"reinitializes", 0>];
   let Subjects = SubjectList<[NonStaticNonConstCXXMethod], ErrorDiag>;

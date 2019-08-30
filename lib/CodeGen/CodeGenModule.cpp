@@ -1559,7 +1559,7 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
       // Search function and template pattern redeclarations for inline.
       auto CheckForInline = [](const FunctionDecl *FD) {
         auto CheckRedeclForInline = [](const FunctionDecl *Redecl) {
-          return Redecl->isInlineSpecified();
+          return Redecl->isInlineSpecified() && !Redecl->hasAttr<NoInlineHintAttr>();
         };
         if (any_of(FD->redecls(), CheckRedeclForInline))
           return true;
