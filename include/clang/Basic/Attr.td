@@ -3280,6 +3280,12 @@ def NoInlineHint : InheritableAttr {
   let Spellings = [Clang<"no_inline_hint">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [NoInlineHintDocs];
+}
+
+def ExternTemplateInlineLinkage : InheritableAttr {
+  let Spellings = [Clang<"extern_template_inline_linkage">];
+  let Subjects = SubjectList<[Var, Function, CXXRecord]>;
+  let Documentation = [Undocumented];
   let MeaningfulToClassTemplateDefinition = 1;
 }
 

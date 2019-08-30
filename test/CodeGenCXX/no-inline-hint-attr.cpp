@@ -25,6 +25,7 @@ void A::explicit_inline_no_hint() {}
 
 struct Extern;
 struct Implicit;
+
 template <class T>
 struct B {
   void implicit_inline() {}
@@ -40,6 +41,23 @@ void B<T>::explicit_inline() {}
 template <class T>
 void B<T>::explicit_inline_no_hint() {}
 extern template struct B<Extern>;
+
+#pragma clang attribute push ([[clang::no_inline_hint]], apply_to=function)
+struct C {
+  void start_pos() {}
+
+  void implicit_inline() {  }
+  [[clang::no_inline_hint]]
+  void implicit_inline_no_hint() { }
+
+  inline void explicit_inline();
+  [[clang::no_inline_hint]]
+  inline void explicit_inline_no_hint();
+};
+
+void C::explicit_inline() {  }
+void C::explicit_inline_no_hint() {}
+#pragma clang attribute pop
 
 void test()
 {
@@ -80,6 +98,19 @@ void test()
   // CHECK: define{{.*}}Implicit{{.*}}explicit_inline{{.*}} [[INLINE_ATTR]]
   a.explicit_inline();
   // CHECK: define{{.*}}Implicit{{.*}}explicit_inline_no_hint{{.*}} [[NO_ATTR]]
+  a.explicit_inline_no_hint();
+  }
+
+  {
+  C a;
+
+  // CHECK: define{{.*}}implicit_inline{{.*}} [[NO_ATTR]]
+  a.implicit_inline();
+  // CHECK: define{{.*}}implicit_inline_no_hint{{.*}} [[NO_ATTR]]
+  a.implicit_inline_no_hint();
+  // CHECK: define{{.*}}explicit_inline{{.*}} [[NO_ATTR]]
+  a.explicit_inline();
+  // CHECK: define{{.*}}explicit_inline_no_hint{{.*}} [[NO_ATTR]]
   a.explicit_inline_no_hint();
   }
 }

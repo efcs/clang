@@ -3482,7 +3482,7 @@ bool FunctionDecl::isImplicitlyInstantiable() const {
   if (!HasPattern || !PatternDecl)
     return true;
 
-  return PatternDecl->isInlined();
+  return PatternDecl->isInlined() || PatternDecl->hasAttr<ExternTemplateInlineLinkageAttr>();
 }
 
 bool FunctionDecl::isTemplateInstantiation() const {

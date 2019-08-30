@@ -682,7 +682,8 @@ void Sema::getUndefinedButUsed(
       if (FD->isExternallyVisible() &&
           !isExternalWithNoLinkageType(FD) &&
           !FD->getMostRecentDecl()->isInlined() &&
-          !FD->hasAttr<ExcludeFromExplicitInstantiationAttr>())
+          !FD->hasAttr<ExcludeFromExplicitInstantiationAttr>() &&
+          !FD->hasAttr<ExternTemplateInlineLinkageAttr>())
         continue;
       if (FD->getBuiltinID())
         continue;

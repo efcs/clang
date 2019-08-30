@@ -7252,6 +7252,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_NoInlineHint:
     handleSimpleAttribute<NoInlineHintAttr>(S, D, AL);
     break;
+  case ParsedAttr::AT_ExternTemplateInlineLinkage:
+    handleSimpleAttribute<ExternTemplateInlineLinkageAttr>(S, D, AL);
+    break;
   case ParsedAttr::AT_LTOVisibilityPublic:
     handleSimpleAttribute<LTOVisibilityPublicAttr>(S, D, AL);
     break;

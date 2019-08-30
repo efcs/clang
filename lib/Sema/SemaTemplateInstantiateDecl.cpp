@@ -4209,6 +4209,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
           PatternDecl->hasSkippedBody()) &&
          "unexpected kind of function template definition");
 
+
   // C++1y [temp.explicit]p10:
   //   Except for inline functions, declarations with types deduced from their
   //   initializer or return value, and class template specializations, other
@@ -4216,6 +4217,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   //   implicit instantiation of the entity to which they refer.
   if (TSK == TSK_ExplicitInstantiationDeclaration &&
       !PatternDecl->isInlined() &&
+      !PatternDecl->hasAttr<ExternTemplateInlineLinkageAttr>() &&
       !PatternDecl->getReturnType()->getContainedAutoType())
     return;
 
